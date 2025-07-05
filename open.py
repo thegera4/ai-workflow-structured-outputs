@@ -1,13 +1,12 @@
-# This is a multimodel and multistep AI workflow to generate engaging posts for X (Twitter) based on a website content.
-# This script fetches a website's HTML, extracts the core content, summarizes it, and generates a post for X.
-# This script uses different Gemma AI open source models to perform the tasks.
+# This is a multimodel and multistep AI workflow to extract invoice details from PDF invoice files.
+# This script reads PDF files from a specified directory or file path, extracts invoice details using AI models,
+# and stores the extracted data in a SQLite database.
 
 import os
 import json
 import sys
 import sqlite3
 import requests
-from pyexpat.errors import messages
 from pypdf import PdfReader
 from openai import OpenAI
 from pydantic import BaseModel, Field
@@ -145,10 +144,10 @@ def get_ai_response(model: str, role: str, prompt: str, schema: dict, temp: floa
         {"role": "user", "content": prompt}
     ]
 
-    response = client.chat.completions.create(
+    response = client.chat.completions.parse(
             model=model,
             messages=msgs,
-            response_format=schema
+            response_format=Invoice
     )
 
     results = json.loads(response.choices[0].message.content)
