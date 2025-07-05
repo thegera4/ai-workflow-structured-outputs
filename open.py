@@ -1,12 +1,10 @@
 # This is a multimodel and multistep AI workflow to extract invoice details from PDF invoice files.
 # This script reads PDF files from a specified directory or file path, extracts invoice details using AI models,
 # and stores the extracted data in a SQLite database.
-
 import os
 import json
 import sys
 import sqlite3
-import requests
 from pypdf import PdfReader
 from openai import OpenAI
 from pydantic import BaseModel, Field
@@ -16,14 +14,12 @@ client = OpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio")
 class Vendor(BaseModel):
     name: str = Field(..., description="The name of the vendor or company issuing the invoice.")
     address: str = Field(..., description="The address of the vendor.")
-    phone: str = Field(..., description="The phone of the vendor.")
     email: str = Field(..., description="The email of the vendor.")
 
 
 class Customer(BaseModel):
     name: str = Field(..., description="The name of the customer or client.")
     address: str = Field(..., description="The address of the customer.")
-    phone: str = Field(..., description="The phone of the customer.")
     email: str = Field(..., description="The email of the customer.")
 
 
@@ -34,7 +30,6 @@ class Invoice(BaseModel):
     date: str = Field(..., description="Date when the invoice was issued.")
     totalAmount: float = Field(..., description="Total amount due on the invoice.")
     tax: float = Field(..., description="Total tax amount applied to the invoice.")
-    paymentTerms: int = Field(..., description="Payment terms for the invoice, such as 'Net 30' or 'Due on receipt'.")
 
 
 def setup_database():
@@ -45,17 +40,14 @@ def setup_database():
             id INTEGER PRIMARY KEY,
             vendor_name TEXT,
             vendor_address TEXT,
-            vendor_phone TEXT,
             vendor_email TEXT,
             customer_name TEXT,
             customer_address TEXT,
-            customer_phone TEXT,
             customer_email TEXT,
             invoice_number TEXT,
             date TEXT,
             total_amount REAL,
-            tax REAL,
-            payment_terms INTEGER
+            tax REAL
         )
     ''')
     conn.commit()
@@ -66,24 +58,21 @@ def insert_invoice_data(conn, invoice_data):
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO invoices (
-            vendor_name, vendor_address, vendor_phone, vendor_email,
-            customer_name, customer_address, customer_phone, customer_email,
-            invoice_number, "date", total_amount, tax, payment_terms
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            vendor_name, vendor_address, vendor_email,
+            customer_name, customer_address, customer_email,
+            invoice_number, "date", total_amount, tax
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         invoice_data.get("vendor", {}).get("name"),
         invoice_data.get("vendor", {}).get("address"),
-        invoice_data.get("vendor", {}).get("phone"),
         invoice_data.get("vendor", {}).get("email"),
         invoice_data.get("customer", {}).get("name"),
         invoice_data.get("customer", {}).get("address"),
-        invoice_data.get("customer", {}).get("phone"),
         invoice_data.get("customer", {}).get("email"),
         invoice_data.get("invoiceNumber"),
         invoice_data.get("date"),
         invoice_data.get("totalAmount"),
-        invoice_data.get("tax"),
-        invoice_data.get("paymentTerms")
+        invoice_data.get("tax")
     ))
     conn.commit()
 
@@ -97,57 +86,16 @@ def get_pdf_content(pdf_path: str) -> str:
     return text
 
 
-expected_schema = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "invoice_details",
-        "strict": "true",
-        "schema": {
-            "type": "object",
-            "properties": {
-                "vendor": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string"},
-                        "address": {"type": "string"},
-                        "phone": {"type": "string"},
-                        "email": {"type": "string"}
-                    },
-                    "required": ["name", "address", "phone", "email"]
-                },
-                "customer": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string"},
-                        "address": {"type": "string"},
-                        "phone": {"type": "string"},
-                        "email": {"type": "string"}
-                    },
-                    "required": ["name", "address", "phone", "email"]
-                },
-                "invoiceNumber": {"type": "string"},
-                "date": {"type": "string"},
-                "totalAmount": {"type": "number"},
-                "tax": {"type": "number"},
-                "paymentTerms": {"type": "integer"}
-            },
-            "required": ["vendor", "customer", "invoiceNumber", "date",
-                         "totalAmount", "tax", "paymentTerms"]
-        }
-    }
-}
-
-
-def get_ai_response(model: str, role: str, prompt: str, schema: dict, temp: float, ctx: int = 4000) -> str:
+def get_ai_response(model: str, role: str, prompt: str) -> str:
     msgs = [
         {"role": "system", "content": role},
         {"role": "user", "content": prompt}
     ]
 
     response = client.chat.completions.parse(
-            model=model,
-            messages=msgs,
-            response_format=Invoice
+        model=model,
+        messages=msgs,
+        response_format=Invoice
     )
 
     results = json.loads(response.choices[0].message.content)
@@ -168,10 +116,7 @@ def extract_invoice_details(pdf_content: str) -> Invoice:
     response = get_ai_response(
         model="google/gemma-3-12b",
         role="You are an expert data extractor who excels at analyzing invoices.",
-        prompt=prompt,
-        schema=expected_schema,
-        temp=0.5,
-        ctx=20000
+        prompt=prompt
     )
 
     if not response:
